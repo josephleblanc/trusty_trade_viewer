@@ -21,6 +21,8 @@ egui = "0.18.0"
 eframe = { version = "0.18.0", features = ["persistence"] }
 serde = { version = "1", features = ["derive"] } # You only need this if you want app persistence
 csv = "1.1"
+trusty_trade = { git = "https://github.com/josephleblanc/trusty_trade.git" }
+rustatistics = { git = "https://github.com/josephleblanc/rustatistics.git" }
 
 # native:
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]

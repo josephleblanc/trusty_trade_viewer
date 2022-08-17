@@ -10,6 +10,8 @@ pub struct TemplateApp {
     value: f32,
     #[serde(skip)]
     box_plot_points: usize,
+    #[serde(skip)]
+    change_box_points_by: usize,
 }
 
 #[allow(non_snake_case)]
@@ -33,6 +35,7 @@ impl Default for TemplateApp {
             label: "Hello World!".to_owned(),
             value: 2.7,
             box_plot_points: 100,
+            change_box_points_by: 5,
         }
     }
 }
@@ -66,7 +69,10 @@ impl eframe::App for TemplateApp {
             label,
             value,
             box_plot_points,
+            change_box_points_by,
         } = self;
+
+        let data = include_str!("/home/brasides/programming/data/BTC_historic_minute/master/2022-07-21_to_2022-08-17_15:13:00.csv");
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -85,22 +91,31 @@ impl eframe::App for TemplateApp {
         });
 
         egui::SidePanel::left("side_panel").show(ctx, |ui| {
+            use egui::{FontId, RichText};
             ui.heading("Side Panel");
 
             ui.horizontal(|ui| {
                 ui.label("Write something: ");
                 ui.text_edit_singleline(label);
             });
-
-            ui.add(egui::Slider::new(value, 0.0..=10.0).text("value"));
-            if ui.button("Increment").clicked() {
-                *value += 1.0;
-            }
-            if ui.button("Decrement").clicked() {
-                *value -= 1.0;
-            }
-            let data = include_str!("/home/brasides/programming/data/BTC_historic_minute/master/2022-07-21_to_2022-08-17_15:13:00.csv");
-            ui.add(egui::Slider::new(box_plot_points, 1..=data.len()).text("Data points"));
+            ui.label(
+                RichText::new("Increase/Decrease data points by").font(FontId::proportional(16.0)),
+            );
+            ui.add(egui::Slider::new(change_box_points_by, 1..=50));
+            ui.horizontal(|ui| {
+                if ui.button("Add data points").clicked() {
+                    match (*box_plot_points).checked_add(*change_box_points_by) {
+                        Some(number) => *box_plot_points = number,
+                        None => *box_plot_points = data.len(),
+                    }
+                }
+                if ui.button("Subtract data points").clicked() {
+                    match (*box_plot_points).checked_sub(*change_box_points_by) {
+                        Some(number) => *box_plot_points = number,
+                        None => *box_plot_points = 0,
+                    }
+                }
+            });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
@@ -123,7 +138,7 @@ impl eframe::App for TemplateApp {
                 "Source code."
             ));
             ui.add(doc_link_label("Box Plot", "box plot"));
-            example_boxplot(ui, box_plot_points);
+            example_boxplot(ui, box_plot_points, data);
             ui.end_row();
             egui::warn_if_debug_build(ui);
         });
@@ -139,10 +154,9 @@ impl eframe::App for TemplateApp {
     }
 }
 
-fn example_boxplot(ui: &mut egui::Ui, box_plot_points: &usize) -> egui::Response {
+fn example_boxplot(ui: &mut egui::Ui, box_plot_points: &usize, data: &str) -> egui::Response {
     use csv::Reader;
     use egui::plot::{BoxElem, BoxPlot, BoxSpread, Plot};
-    let data = include_str!("/home/brasides/programming/data/BTC_historic_minute/master/2022-07-21_to_2022-08-17_15:13:00.csv");
     let mut rdr1 = Reader::from_reader(data.as_bytes());
     let mut box_color_vec: Vec<egui::Color32> = vec![egui::Color32::GRAY];
     let data1: Vec<Data> = rdr1.deserialize().map(|d| d.unwrap()).collect();
