@@ -8,6 +8,8 @@ pub struct TemplateApp {
     // this how you opt-out of serialization of a member
     #[serde(skip)]
     value: f32,
+    #[serde(skip)]
+    box_plot_points: usize,
 }
 
 #[allow(non_snake_case)]
@@ -30,6 +32,7 @@ impl Default for TemplateApp {
             // Example stuff:
             label: "Hello World!".to_owned(),
             value: 2.7,
+            box_plot_points: 100,
         }
     }
 }
@@ -59,7 +62,11 @@ impl eframe::App for TemplateApp {
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
-        let Self { label, value } = self;
+        let Self {
+            label,
+            value,
+            box_plot_points,
+        } = self;
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -89,6 +96,11 @@ impl eframe::App for TemplateApp {
             if ui.button("Increment").clicked() {
                 *value += 1.0;
             }
+            if ui.button("Decrement").clicked() {
+                *value -= 1.0;
+            }
+            let data = include_str!("/home/brasides/programming/data/BTC_historic_minute/master/2022-07-21_to_2022-08-17_15:13:00.csv");
+            ui.add(egui::Slider::new(box_plot_points, 1..=data.len()).text("Data points"));
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
@@ -111,7 +123,7 @@ impl eframe::App for TemplateApp {
                 "Source code."
             ));
             ui.add(doc_link_label("Box Plot", "box plot"));
-            example_boxplot(ui);
+            example_boxplot(ui, box_plot_points);
             ui.end_row();
             egui::warn_if_debug_build(ui);
         });
@@ -127,16 +139,23 @@ impl eframe::App for TemplateApp {
     }
 }
 
-fn example_boxplot(ui: &mut egui::Ui) -> egui::Response {
+fn example_boxplot(ui: &mut egui::Ui, box_plot_points: &usize) -> egui::Response {
     use csv::Reader;
     use egui::plot::{BoxElem, BoxPlot, BoxSpread, Plot};
     let data = include_str!("/home/brasides/programming/data/BTC_historic_minute/master/2022-07-21_to_2022-08-17_15:13:00.csv");
-    let n = 40;
-    let mut rdr = Reader::from_reader(data.as_bytes());
-    //.expect("Could not load .csv file from data of include_str!(filepath)")
-    let values: Vec<BoxElem> = rdr
+    let mut rdr1 = Reader::from_reader(data.as_bytes());
+    let mut box_color_vec: Vec<egui::Color32> = vec![egui::Color32::GRAY];
+    let data1: Vec<Data> = rdr1.deserialize().map(|d| d.unwrap()).collect();
+    for i in 1..*box_plot_points {
+        match data1[i].close >= data1[i - 1].close {
+            true => box_color_vec.push(egui::Color32::GREEN),
+            false => box_color_vec.push(egui::Color32::RED),
+        }
+    }
+    let mut rdr2 = Reader::from_reader(data.as_bytes());
+    let box_elems: Vec<BoxElem> = rdr2
         .deserialize::<Data>()
-        .zip((0..n).into_iter())
+        .zip((0..*box_plot_points).into_iter())
         .map(|(d, i)| {
             let row = d.unwrap();
             (
@@ -150,11 +169,17 @@ fn example_boxplot(ui: &mut egui::Ui) -> egui::Response {
                 },
             )
         })
-        .map(|(i, box_spread)| BoxElem::new(i, box_spread))
+        .zip(box_color_vec)
+        .map(|((i, box_spread), color)| {
+            BoxElem::new(i, box_spread)
+                .fill(color)
+                .stroke(egui::Stroke::new(0.2_f32, color))
+        })
         .collect();
-    let boxes = BoxPlot::new(values);
+    let boxes = BoxPlot::new(box_elems);
     Plot::new("box_plot")
         .view_aspect(2.0)
+        .data_aspect(0.1)
         .show(ui, |plot_ui| plot_ui.box_plot(boxes))
         .response
 }
