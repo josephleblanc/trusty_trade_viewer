@@ -12,6 +12,8 @@ pub struct TemplateApp {
     box_plot_points: usize,
     #[serde(skip)]
     change_box_points_by: usize,
+    #[serde(skip)]
+    show_bollinger: bool,
 }
 
 #[allow(non_snake_case)]
@@ -28,6 +30,12 @@ pub struct Data {
     pub conversionSymbol: Option<String>,
 }
 
+impl Data {
+    fn tp(&self) -> f64 {
+        (self.high + self.low + self.close) as f64 / 3.0_f64
+    }
+}
+
 impl Default for TemplateApp {
     fn default() -> Self {
         Self {
@@ -36,6 +44,7 @@ impl Default for TemplateApp {
             value: 2.7,
             box_plot_points: 100,
             change_box_points_by: 5,
+            show_bollinger: false,
         }
     }
 }
@@ -70,9 +79,11 @@ impl eframe::App for TemplateApp {
             value,
             box_plot_points,
             change_box_points_by,
+            show_bollinger,
         } = self;
 
-        let data = include_str!("/home/brasides/programming/data/BTC_historic_minute/master/2022-07-21_to_2022-08-17_15:13:00.csv");
+        let data = include_bytes!("/home/brasides/programming/data/BTC_historic_minute/master/2022-07-21_to_2022-08-17_15:13:00.csv");
+        let data: Vec<Data> = read_data(data, *box_plot_points);
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -117,6 +128,9 @@ impl eframe::App for TemplateApp {
                 }
             });
 
+            ui.label(RichText::new("Show Indicators").font(FontId::proportional(16.0)));
+            ui.checkbox(show_bollinger, "Bollinger Bands");
+
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
@@ -138,7 +152,7 @@ impl eframe::App for TemplateApp {
                 "Source code."
             ));
             ui.add(doc_link_label("Box Plot", "box plot"));
-            example_boxplot(ui, box_plot_points, data);
+            draw_multiplot(ui, boxplot_from_data(data));
             ui.end_row();
             egui::warn_if_debug_build(ui);
         });
@@ -154,47 +168,68 @@ impl eframe::App for TemplateApp {
     }
 }
 
-fn example_boxplot(ui: &mut egui::Ui, box_plot_points: &usize, data: &str) -> egui::Response {
+fn read_data(data: &[u8], box_plot_points: usize) -> Vec<Data> {
     use csv::Reader;
-    use egui::plot::{BoxElem, BoxPlot, BoxSpread, Plot};
-    let mut rdr1 = Reader::from_reader(data.as_bytes());
-    let mut box_color_vec: Vec<egui::Color32> = vec![egui::Color32::GRAY];
-    let data1: Vec<Data> = rdr1.deserialize().map(|d| d.unwrap()).collect();
-    for i in 1..*box_plot_points {
-        match data1[i].close >= data1[i - 1].close {
-            true => box_color_vec.push(egui::Color32::GREEN),
-            false => box_color_vec.push(egui::Color32::RED),
-        }
-    }
-    let mut rdr2 = Reader::from_reader(data.as_bytes());
-    let box_elems: Vec<BoxElem> = rdr2
-        .deserialize::<Data>()
-        .zip((0..*box_plot_points).into_iter())
-        .map(|(d, i)| {
-            let row = d.unwrap();
+    let mut rdr = Reader::from_reader(data);
+    let iter = rdr.deserialize();
+    iter.zip(0..box_plot_points).map(|(d, i)| d.unwrap()).collect()
+}
+
+fn boxplot_from_data(data: Vec<Data>) -> egui::plot::BoxPlot {
+    //use csv::Reader;
+    use egui::plot::{BoxElem, BoxPlot, BoxSpread, Line, Plot, Value, Values};
+
+    //let mut tp_vec: Vec<[f64; 2]> = vec![[0_f64, data[0].tp()]];
+    //for i in 1..data.len() {
+    //    tp_vec.push([i as f64, data[i].tp()]);
+    //}
+    //let tp_line = Line::new(Values::from_values_iter(
+    //    tp_vec.iter().map(|[x, y]| Value::new(*x, *y)),
+    //));
+    let box_elems: Vec<BoxElem> = //rdr2
+        data.iter().zip(data.iter().skip(1))
+        .map(|(d_last, d)| 
             (
-                i as f64,
                 BoxSpread {
-                    lower_whisker: row.low as f64,
-                    quartile1: row.open.min(row.close) as f64,
-                    median: ((row.high + row.low + row.close) / 3.0_f32) as f64,
-                    quartile3: row.open.max(row.close) as f64,
-                    upper_whisker: row.high as f64,
+                    lower_whisker: d.low as f64,
+                    quartile1: d.open.min(d.close) as f64,
+                    median: ((d.high + d.low + d.close) / 3.0_f32) as f64,
+                    quartile3: d.open.max(d.close) as f64,
+                    upper_whisker: d.high as f64,
                 },
+                match d.close >= d_last.close {
+                    true => egui::Color32::GREEN,
+                    false => egui::Color32::RED,
+                }
             )
-        })
-        .zip(box_color_vec)
-        .map(|((i, box_spread), color)| {
-            BoxElem::new(i, box_spread)
+        )
+        .enumerate()
+        .map(|(i, (box_spread, color))| {
+            BoxElem::new(i as f64, box_spread)
                 .fill(color)
                 .stroke(egui::Stroke::new(0.2_f32, color))
         })
         .collect();
-    let boxes = BoxPlot::new(box_elems);
+    BoxPlot::new(box_elems)
+    //Plot::new("box_plot")
+    //    .view_aspect(2.0)
+    //    .data_aspect(0.1)
+    //    .show(ui, |plot_ui| {
+    //        plot_ui.box_plot(boxes);
+    //        // plot_ui.line(tp_line);
+    //    })
+    //    .response
+}
+
+fn draw_multiplot(ui: &mut egui::Ui, boxplot: egui::plot::BoxPlot) -> egui::Response {
+    use egui::plot::Plot;
     Plot::new("box_plot")
         .view_aspect(2.0)
         .data_aspect(0.1)
-        .show(ui, |plot_ui| plot_ui.box_plot(boxes))
+        .show(ui, |plot_ui| {
+            plot_ui.box_plot(boxplot);
+            // plot_ui.line(tp_line);
+        })
         .response
 }
 
