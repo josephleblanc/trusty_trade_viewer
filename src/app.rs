@@ -15,7 +15,11 @@ pub struct TemplateApp {
     #[serde(skip)]
     show_bollinger: bool,
     #[serde(skip)]
-    show_tp_line: bool
+    show_tp_line: bool,
+    #[serde(skip)]
+    show_moving_average: bool,
+    #[serde(skip)]
+    moving_average_size: usize,
 }
 
 #[allow(non_snake_case)]
@@ -48,6 +52,8 @@ impl Default for TemplateApp {
             change_box_points_by: 5,
             show_bollinger: false,
             show_tp_line: false,
+            show_moving_average: false,
+            moving_average_size: 20,
         }
     }
 }
@@ -84,6 +90,8 @@ impl eframe::App for TemplateApp {
             change_box_points_by,
             show_bollinger,
             show_tp_line,
+            show_moving_average,
+            moving_average_size,
         } = self;
 
         // This is where to put things which are needed for different
@@ -145,6 +153,15 @@ impl eframe::App for TemplateApp {
             ui.label(RichText::new("Show Indicators").font(FontId::proportional(16.0)));
             ui.checkbox(show_bollinger, "Bollinger Bands");
             ui.checkbox(show_tp_line, "Typical Price Line");
+            ui.checkbox(show_moving_average, "Simple Moving Average");
+            egui::ComboBox::from_label("Simple Moving Average Size")
+                .selected_text(format!("{:?}", moving_average_size))
+                .show_ui(ui, |ui| {
+                    ui.selectable_value(moving_average_size, 20_usize, "20");
+                    ui.selectable_value(moving_average_size, 50, "50");
+                    ui.selectable_value(moving_average_size, 200, "200");
+                }
+            );
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
@@ -168,9 +185,14 @@ impl eframe::App for TemplateApp {
             ));
             ui.add(doc_link_label("Box Plot", "box plot"));
 
+            let simple_lines: Vec<Option<egui::plot::Line>> = vec![
+                tp_line(&tp_vec, show_tp_line),
+                sma_line(&tp_vec, *moving_average_size, *show_moving_average)
+            ];
+
             draw_multiplot(ui, 
                 boxplot_from_data(data),
-                tp_line(tp_vec, show_tp_line)
+                simple_lines,
             );
             ui.end_row();
             ui.label(format!("size of dataset used: {}", box_plot_points));
@@ -247,7 +269,7 @@ fn boxplot_from_data(data: Vec<Data>) -> egui::plot::BoxPlot {
 }
 
 // 
-fn tp_line(tp_vec: Vec<f64>, show_tp_line: &bool) -> Option<egui::plot::Line> {
+fn tp_line(tp_vec: &[f64], show_tp_line: &bool) -> Option<egui::plot::Line> {
     use egui::plot::{Line, Values, Value};
     match show_tp_line {
         true => Some(Line::new(Values::from_values_iter(
@@ -256,17 +278,31 @@ fn tp_line(tp_vec: Vec<f64>, show_tp_line: &bool) -> Option<egui::plot::Line> {
         false => None}
 }
 
-fn draw_multiplot(ui: &mut egui::Ui, boxplot: egui::plot::BoxPlot, tp_line: Option<egui::plot::Line>) -> egui::Response {
+fn sma_line(tp_vec: &[f64], moving_average_size: usize, show_moving_average: bool) -> Option<egui::plot::Line> {
+    use egui::plot::{Line, Values, Value};
+    if show_moving_average {
+        let sma_vec = rustatistics::rolling_mean(tp_vec, moving_average_size);
+        let sma_values = sma_vec
+            .iter()
+            .enumerate()
+            .filter(|(_, sma)| sma.is_some())
+            .map(|(i, sma)| Value::new(i as f64, sma.unwrap()));
+        Some(Line::new(Values::from_values_iter(sma_values)))
+    } else {
+        None
+    }
+}
+
+fn draw_multiplot(ui: &mut egui::Ui, boxplot: egui::plot::BoxPlot, simple_lines: Vec<Option<egui::plot::Line>>) -> egui::Response {
     use egui::plot::Plot;
     Plot::new("box_plot")
         .view_aspect(2.0)
         .data_aspect(0.1)
         .show(ui, |plot_ui| {
             plot_ui.box_plot(boxplot);
-            if let Some(typical_price_line) = tp_line {
-                plot_ui.line(typical_price_line);
-            }
-        })
+            for line in simple_lines.into_iter().flatten() {
+                plot_ui.line(line);
+        }})
         .response
 }
 
