@@ -1,4 +1,4 @@
-/// We derive Deserialize/Serialize so we can persist app state on shutdown.
+// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
 pub struct TemplateApp {
@@ -7,13 +7,15 @@ pub struct TemplateApp {
 
     // this how you opt-out of serialization of a member
     #[serde(skip)]
-    value: f32,
+    _value: f32,
     #[serde(skip)]
     box_plot_points: usize,
     #[serde(skip)]
     change_box_points_by: usize,
     #[serde(skip)]
     show_bollinger: bool,
+    #[serde(skip)]
+    show_tp_line: bool
 }
 
 #[allow(non_snake_case)]
@@ -41,10 +43,11 @@ impl Default for TemplateApp {
         Self {
             // Example stuff:
             label: "Hello World!".to_owned(),
-            value: 2.7,
+            _value: 2.7,
             box_plot_points: 100,
             change_box_points_by: 5,
             show_bollinger: false,
+            show_tp_line: false,
         }
     }
 }
@@ -76,14 +79,21 @@ impl eframe::App for TemplateApp {
     fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
         let Self {
             label,
-            value,
+            _value,
             box_plot_points,
             change_box_points_by,
             show_bollinger,
+            show_tp_line,
         } = self;
 
+        // This is where to put things which are needed for different
+        // calculations, making it a bad idea to toggle them. The variables in
+        // this area should be kept as limited as possible, to limit memory
+        // bloat. It should also only use datapoints in the range of
+        // box_plot_points.
         let data = include_bytes!("/home/brasides/programming/data/BTC_historic_minute/master/2022-07-21_to_2022-08-17_15:13:00.csv");
         let data: Vec<Data> = read_data(data, *box_plot_points);
+        let tp_vec: Vec<f64> = data.iter().map(|d| d.tp()).collect();
 
         // Examples of how to create different panels and windows.
         // Pick whichever suits you.
@@ -128,8 +138,13 @@ impl eframe::App for TemplateApp {
                 }
             });
 
+            // Checkboxes
+            // These toggle whether to show the indicator on the plot. Ideally
+            // this means that they will not be calculated if the box is not
+            // ticked.
             ui.label(RichText::new("Show Indicators").font(FontId::proportional(16.0)));
             ui.checkbox(show_bollinger, "Bollinger Bands");
+            ui.checkbox(show_tp_line, "Typical Price Line");
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
@@ -152,8 +167,13 @@ impl eframe::App for TemplateApp {
                 "Source code."
             ));
             ui.add(doc_link_label("Box Plot", "box plot"));
-            draw_multiplot(ui, boxplot_from_data(data));
+
+            draw_multiplot(ui, 
+                boxplot_from_data(data),
+                tp_line(tp_vec, show_tp_line)
+            );
             ui.end_row();
+            ui.label(format!("size of dataset used: {}", box_plot_points));
             egui::warn_if_debug_build(ui);
         });
 
@@ -172,24 +192,36 @@ fn read_data(data: &[u8], box_plot_points: usize) -> Vec<Data> {
     use csv::Reader;
     let mut rdr = Reader::from_reader(data);
     let iter = rdr.deserialize();
-    iter.zip(0..box_plot_points).map(|(d, i)| d.unwrap()).collect()
+    iter.zip(0..box_plot_points).map(|(d, _)| d.unwrap()).collect()
 }
 
+// Make a boxplot to be used in the draw_multiplot function.
+// This function takes a Vec of the Data struct as input and creates a BoxPlot
+// that looks like the standard candlestick charts. In order for the candle to
+// be colored, it must be compared to the previous candle to know if it is green
+// or red. Currently this results in a boxplot of size n-1 from a Data input of
+// n size, where the first data point is discarded.
 fn boxplot_from_data(data: Vec<Data>) -> egui::plot::BoxPlot {
-    //use csv::Reader;
-    use egui::plot::{BoxElem, BoxPlot, BoxSpread, Line, Plot, Value, Values};
+    use egui::plot::{BoxElem, BoxPlot, BoxSpread};
 
-    //let mut tp_vec: Vec<[f64; 2]> = vec![[0_f64, data[0].tp()]];
-    //for i in 1..data.len() {
-    //    tp_vec.push([i as f64, data[i].tp()]);
-    //}
-    //let tp_line = Line::new(Values::from_values_iter(
-    //    tp_vec.iter().map(|[x, y]| Value::new(*x, *y)),
-    //));
-    let box_elems: Vec<BoxElem> = //rdr2
+    let first_box: BoxElem = BoxElem::new(
+        0.0_f64, 
+        BoxSpread {
+                    lower_whisker: data[0].low as f64,
+                    quartile1: data[0].open.min(data[0].close) as f64,
+                    median: ((data[0].high + data[0].low + data[0].close) / 3.0_f32) as f64,
+                    quartile3: data[0].open.max(data[0].close) as f64,
+                    upper_whisker: data[0].high as f64,
+                })
+        .fill(egui::Color32::GRAY)
+        .stroke(egui::Stroke::new(0.2_f32, egui::Color32::GRAY));
+        
+    let mut box_elems: Vec<BoxElem> = //rdr2
         data.iter().zip(data.iter().skip(1))
-        .map(|(d_last, d)| 
+        .enumerate()
+        .map(|(i, (d_last, d))| 
             (
+                i + 1, 
                 BoxSpread {
                     lower_whisker: d.low as f64,
                     quartile1: d.open.min(d.close) as f64,
@@ -203,32 +235,37 @@ fn boxplot_from_data(data: Vec<Data>) -> egui::plot::BoxPlot {
                 }
             )
         )
-        .enumerate()
-        .map(|(i, (box_spread, color))| {
+        .map(|(i, box_spread, color)| {
             BoxElem::new(i as f64, box_spread)
                 .fill(color)
                 .stroke(egui::Stroke::new(0.2_f32, color))
         })
         .collect();
+
+    box_elems.insert(0, first_box);
     BoxPlot::new(box_elems)
-    //Plot::new("box_plot")
-    //    .view_aspect(2.0)
-    //    .data_aspect(0.1)
-    //    .show(ui, |plot_ui| {
-    //        plot_ui.box_plot(boxes);
-    //        // plot_ui.line(tp_line);
-    //    })
-    //    .response
 }
 
-fn draw_multiplot(ui: &mut egui::Ui, boxplot: egui::plot::BoxPlot) -> egui::Response {
+// 
+fn tp_line(tp_vec: Vec<f64>, show_tp_line: &bool) -> Option<egui::plot::Line> {
+    use egui::plot::{Line, Values, Value};
+    match show_tp_line {
+        true => Some(Line::new(Values::from_values_iter(
+            tp_vec.iter().enumerate().map(|(x, y)| Value::new(x as f64, *y)),
+            ))),
+        false => None}
+}
+
+fn draw_multiplot(ui: &mut egui::Ui, boxplot: egui::plot::BoxPlot, tp_line: Option<egui::plot::Line>) -> egui::Response {
     use egui::plot::Plot;
     Plot::new("box_plot")
         .view_aspect(2.0)
         .data_aspect(0.1)
         .show(ui, |plot_ui| {
             plot_ui.box_plot(boxplot);
-            // plot_ui.line(tp_line);
+            if let Some(typical_price_line) = tp_line {
+                plot_ui.line(typical_price_line);
+            }
         })
         .response
 }
