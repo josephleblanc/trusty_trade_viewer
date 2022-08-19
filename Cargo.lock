@@ -858,9 +858,9 @@ dependencies = [
 
 [[package]]
 name = "iana-time-zone"
-version = "0.1.45"
+version = "0.1.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef5528d9c2817db4e10cc78f8d4c8228906e5854f389ff6b076cee3572a09d35"
+checksum = "ad2bfd338099682614d3ee3fe0cd72e0b6a41ca6a87f6a74a3bd593c91650501"
 dependencies = [
  "android_system_properties",
  "core-foundation-sys 0.8.3",
@@ -1521,7 +1521,7 @@ dependencies = [
 [[package]]
 name = "rustatistics"
 version = "0.1.0"
-source = "git+https://github.com/josephleblanc/rustatistics.git#bb759bcc98deaf3926f34dfc590193a666dd16ae"
+source = "git+https://github.com/josephleblanc/rustatistics.git#b1b8ba8efde17b2301c45b80e74c841c502e1941"
 
 [[package]]
 name = "rustc_version"
@@ -1809,7 +1809,7 @@ dependencies = [
 [[package]]
 name = "trusty_trade"
 version = "0.1.0"
-source = "git+https://github.com/josephleblanc/trusty_trade.git#03e50aea7c517e23259e6ba75a98de457bf34ccc"
+source = "git+https://github.com/josephleblanc/trusty_trade.git#1d8455e3891c46319abc56cabb9f06cac0ee52ee"
 dependencies = [
  "chrono",
  "csv",
