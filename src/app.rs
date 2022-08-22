@@ -1,6 +1,7 @@
-// We derive Deserialize/Serialize so we can persist app state on shutdown.
+/// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
 #[serde(default)] // if we add new fields, give them default values when deserializing old state
+
 pub struct TemplateApp {
     // Example stuff:
     label: String,
@@ -82,7 +83,7 @@ impl eframe::App for TemplateApp {
 
     /// Called each time the UI needs repainting, which may be many times per second.
     /// Put your widgets into a `SidePanel`, `TopPanel`, `CentralPanel`, `Window` or `Area`.
-    fn update(&mut self, ctx: &egui::Context, frame: &mut eframe::Frame) {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         let Self {
             label,
             _value,
@@ -93,27 +94,26 @@ impl eframe::App for TemplateApp {
             show_moving_average,
             moving_average_size,
         } = self;
+        // Examples of how to create different panels and windows.
 
         // This is where to put things which are needed for different
         // calculations, making it a bad idea to toggle them. The variables in
         // this area should be kept as limited as possible, to limit memory
         // bloat. It should also only use datapoints in the range of
         // box_plot_points.
-        let data = include_bytes!("/home/brasides/programming/data/BTC_historic_minute/master/2022-07-21_to_2022-08-17_15:13:00.csv");
+        let data = include_bytes!(
+            r#"/home/brasides/programming/data/BTC_historic_minute/master/2022-08-15_to_2022-08-22_21:55:00.csv"#
+        );
         let data: Vec<Data> = read_data(data, *box_plot_points);
         let tp_vec: Vec<f64> = data.iter().map(|d| d.tp()).collect();
 
-        // Examples of how to create different panels and windows.
-        // Pick whichever suits you.
-        // Tip: a good default choice is to just keep the `CentralPanel`.
-        // For inspiration and more examples, go to https://emilk.github.io/egui
-
+        #[cfg(not(target_arch = "wasm32"))] // no File->Quit on web pages!
         egui::TopBottomPanel::top("top_panel").show(ctx, |ui| {
             // The top panel is often a good place for a menu bar:
             egui::menu::bar(ui, |ui| {
                 ui.menu_button("File", |ui| {
                     if ui.button("Quit").clicked() {
-                        frame.quit();
+                        _frame.close();
                     }
                 });
             });
@@ -160,8 +160,7 @@ impl eframe::App for TemplateApp {
                     ui.selectable_value(moving_average_size, 20_usize, "20");
                     ui.selectable_value(moving_average_size, 50, "50");
                     ui.selectable_value(moving_average_size, 200, "200");
-                }
-            );
+                });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
@@ -173,7 +172,6 @@ impl eframe::App for TemplateApp {
                 });
             });
         });
-
         egui::CentralPanel::default().show(ctx, |ui| {
             // The central panel the region left after adding TopPanel's and SidePanel's
 
@@ -187,13 +185,10 @@ impl eframe::App for TemplateApp {
 
             let simple_lines: Vec<Option<egui::plot::Line>> = vec![
                 tp_line(&tp_vec, show_tp_line),
-                sma_line(&tp_vec, *moving_average_size, *show_moving_average)
+                sma_line(&tp_vec, *moving_average_size, *show_moving_average),
             ];
 
-            draw_multiplot(ui, 
-                boxplot_from_data(data),
-                simple_lines,
-            );
+            draw_multiplot(ui, boxplot_from_data(data), simple_lines);
             ui.end_row();
             ui.label(format!("size of dataset used: {}", box_plot_points));
             egui::warn_if_debug_build(ui);
@@ -214,7 +209,9 @@ fn read_data(data: &[u8], box_plot_points: usize) -> Vec<Data> {
     use csv::Reader;
     let mut rdr = Reader::from_reader(data);
     let iter = rdr.deserialize();
-    iter.zip(0..box_plot_points).map(|(d, _)| d.unwrap()).collect()
+    iter.zip(0..box_plot_points)
+        .map(|(d, _)| d.unwrap())
+        .collect()
 }
 
 // Make a boxplot to be used in the draw_multiplot function.
@@ -227,23 +224,24 @@ fn boxplot_from_data(data: Vec<Data>) -> egui::plot::BoxPlot {
     use egui::plot::{BoxElem, BoxPlot, BoxSpread};
 
     let first_box: BoxElem = BoxElem::new(
-        0.0_f64, 
+        0.0_f64,
         BoxSpread {
-                    lower_whisker: data[0].low as f64,
-                    quartile1: data[0].open.min(data[0].close) as f64,
-                    median: ((data[0].high + data[0].low + data[0].close) / 3.0_f32) as f64,
-                    quartile3: data[0].open.max(data[0].close) as f64,
-                    upper_whisker: data[0].high as f64,
-                })
-        .fill(egui::Color32::GRAY)
-        .stroke(egui::Stroke::new(0.2_f32, egui::Color32::GRAY));
-        
+            lower_whisker: data[0].low as f64,
+            quartile1: data[0].open.min(data[0].close) as f64,
+            median: ((data[0].high + data[0].low + data[0].close) / 3.0_f32) as f64,
+            quartile3: data[0].open.max(data[0].close) as f64,
+            upper_whisker: data[0].high as f64,
+        },
+    )
+    .fill(egui::Color32::GRAY)
+    .stroke(egui::Stroke::new(0.2_f32, egui::Color32::GRAY));
+
     let mut box_elems: Vec<BoxElem> = //rdr2
         data.iter().zip(data.iter().skip(1))
         .enumerate()
-        .map(|(i, (d_last, d))| 
+        .map(|(i, (d_last, d))|
             (
-                i + 1, 
+                i + 1,
                 BoxSpread {
                     lower_whisker: d.low as f64,
                     quartile1: d.open.min(d.close) as f64,
@@ -268,32 +266,41 @@ fn boxplot_from_data(data: Vec<Data>) -> egui::plot::BoxPlot {
     BoxPlot::new(box_elems)
 }
 
-// 
+//
 fn tp_line(tp_vec: &[f64], show_tp_line: &bool) -> Option<egui::plot::Line> {
-    use egui::plot::{Line, Values, Value};
+    use egui::plot::{Line, PlotPoints};
     match show_tp_line {
-        true => Some(Line::new(Values::from_values_iter(
-            tp_vec.iter().enumerate().map(|(x, y)| Value::new(x as f64, *y)),
-            ))),
-        false => None}
+        true => Some(Line::new(PlotPoints::from_iter(
+            tp_vec.iter().enumerate().map(|(x, y)| [x as f64, *y]),
+        ))),
+        false => None,
+    }
 }
 
-fn sma_line(tp_vec: &[f64], moving_average_size: usize, show_moving_average: bool) -> Option<egui::plot::Line> {
-    use egui::plot::{Line, Values, Value};
+fn sma_line(
+    tp_vec: &[f64],
+    moving_average_size: usize,
+    show_moving_average: bool,
+) -> Option<egui::plot::Line> {
+    use egui::plot::{Line, PlotPoints};
     if show_moving_average {
         let sma_vec = rustatistics::rolling_mean(tp_vec, moving_average_size);
         let sma_values = sma_vec
             .iter()
             .enumerate()
             .filter(|(_, sma)| sma.is_some())
-            .map(|(i, sma)| Value::new(i as f64, sma.unwrap()));
-        Some(Line::new(Values::from_values_iter(sma_values)))
+            .map(|(i, sma)| [i as f64, sma.unwrap()]);
+        Some(Line::new(PlotPoints::from_iter(sma_values)))
     } else {
         None
     }
 }
 
-fn draw_multiplot(ui: &mut egui::Ui, boxplot: egui::plot::BoxPlot, simple_lines: Vec<Option<egui::plot::Line>>) -> egui::Response {
+fn draw_multiplot(
+    ui: &mut egui::Ui,
+    boxplot: egui::plot::BoxPlot,
+    simple_lines: Vec<Option<egui::plot::Line>>,
+) -> egui::Response {
     use egui::plot::Plot;
     Plot::new("box_plot")
         .view_aspect(2.0)
@@ -302,7 +309,8 @@ fn draw_multiplot(ui: &mut egui::Ui, boxplot: egui::plot::BoxPlot, simple_lines:
             plot_ui.box_plot(boxplot);
             for line in simple_lines.into_iter().flatten() {
                 plot_ui.line(line);
-        }})
+            }
+        })
         .response
 }
 
