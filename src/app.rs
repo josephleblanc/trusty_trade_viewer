@@ -18,9 +18,18 @@ pub struct TemplateApp {
     #[serde(skip)]
     show_tp_line: bool,
     #[serde(skip)]
+    // Moving Averages
     show_moving_average: bool,
     #[serde(skip)]
     moving_average_size: usize,
+    #[serde(skip)]
+    is_sma1: bool,
+    #[serde(skip)]
+    is_sma2: bool,
+    #[serde(skip)]
+    custom_sma1: usize,
+    #[serde(skip)]
+    custom_sma2: usize,
 }
 
 #[allow(non_snake_case)]
@@ -53,8 +62,13 @@ impl Default for TemplateApp {
             change_box_points_by: 5,
             show_bollinger: false,
             show_tp_line: false,
+            // Moving Averages
             show_moving_average: false,
             moving_average_size: 20,
+            is_sma1: false,
+            is_sma2: false,
+            custom_sma1: 10,
+            custom_sma2: 10,
         }
     }
 }
@@ -93,6 +107,10 @@ impl eframe::App for TemplateApp {
             show_tp_line,
             show_moving_average,
             moving_average_size,
+            is_sma1,
+            is_sma2,
+            custom_sma1,
+            custom_sma2,
         } = self;
         // Examples of how to create different panels and windows.
 
@@ -150,17 +168,41 @@ impl eframe::App for TemplateApp {
             // These toggle whether to show the indicator on the plot. Ideally
             // this means that they will not be calculated if the box is not
             // ticked.
-            ui.label(RichText::new("Show Indicators").font(FontId::proportional(16.0)));
+            ui.label(RichText::new("Display Indicators").font(FontId::proportional(16.0)));
             ui.checkbox(show_bollinger, "Bollinger Bands");
             ui.checkbox(show_tp_line, "Typical Price Line");
             ui.checkbox(show_moving_average, "Simple Moving Average");
-            egui::ComboBox::from_label("Simple Moving Average Size")
+            egui::ComboBox::from_label("SMA Size")
                 .selected_text(format!("{:?}", moving_average_size))
                 .show_ui(ui, |ui| {
                     ui.selectable_value(moving_average_size, 20_usize, "20");
                     ui.selectable_value(moving_average_size, 50, "50");
                     ui.selectable_value(moving_average_size, 200, "200");
                 });
+            ui.group(|ui| {
+                ui.label("Custom SMA");
+                ui.horizontal(|ui| {
+                    ui.vertical(|ui| {
+                        ui.checkbox(is_sma1, "SMA 1");
+                        ui.add(
+                            egui::DragValue::new(custom_sma1)
+                                .speed(1)
+                                .clamp_range(10..=*box_plot_points)
+                                .prefix("sma 1: "),
+                        );
+                    });
+
+                    ui.vertical(|ui| {
+                        ui.checkbox(is_sma2, "SMA 2");
+                        ui.add(
+                            egui::DragValue::new(custom_sma2)
+                                .speed(1)
+                                .clamp_range(10..=*box_plot_points)
+                                .prefix("sma 2: "),
+                        );
+                    });
+                });
+            });
 
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
                 ui.horizontal(|ui| {
@@ -186,6 +228,8 @@ impl eframe::App for TemplateApp {
             let simple_lines: Vec<Option<egui::plot::Line>> = vec![
                 tp_line(&tp_vec, show_tp_line),
                 sma_line(&tp_vec, *moving_average_size, *show_moving_average),
+                sma_line(&tp_vec, *custom_sma1, *is_sma1),
+                sma_line(&tp_vec, *custom_sma2, *is_sma2),
             ];
 
             draw_multiplot(ui, boxplot_from_data(data), simple_lines);
