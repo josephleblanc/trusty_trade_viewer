@@ -10,6 +10,8 @@ pub struct TemplateApp {
     #[serde(skip)]
     _value: f32,
     #[serde(skip)]
+    show_candlesticks: bool,
+    #[serde(skip)]
     box_plot_points: usize,
     #[serde(skip)]
     change_box_points_by: usize,
@@ -58,6 +60,7 @@ impl Default for TemplateApp {
             // Example stuff:
             label: "Hello World!".to_owned(),
             _value: 2.7,
+            show_candlesticks: true,
             box_plot_points: 100,
             change_box_points_by: 5,
             show_bollinger: false,
@@ -101,6 +104,7 @@ impl eframe::App for TemplateApp {
         let Self {
             label,
             _value,
+            show_candlesticks,
             box_plot_points,
             change_box_points_by,
             show_bollinger,
@@ -169,6 +173,7 @@ impl eframe::App for TemplateApp {
             // this means that they will not be calculated if the box is not
             // ticked.
             ui.label(RichText::new("Display Indicators").font(FontId::proportional(16.0)));
+            ui.checkbox(show_candlesticks, "Candlesticks");
             ui.checkbox(show_bollinger, "Bollinger Bands");
             ui.checkbox(show_tp_line, "Typical Price Line");
             ui.checkbox(show_moving_average, "Simple Moving Average");
@@ -231,8 +236,10 @@ impl eframe::App for TemplateApp {
                 sma_line(&tp_vec, *custom_sma1, *is_sma1),
                 sma_line(&tp_vec, *custom_sma2, *is_sma2),
             ];
+            let box_plots: Vec<Option<egui::plot::BoxPlot>> =
+                vec![boxplot_from_data(data, *show_candlesticks)];
 
-            draw_multiplot(ui, boxplot_from_data(data), simple_lines);
+            draw_multiplot(ui, box_plots, simple_lines);
             ui.end_row();
             ui.label(format!("size of dataset used: {}", box_plot_points));
             egui::warn_if_debug_build(ui);
@@ -264,9 +271,11 @@ fn read_data(data: &[u8], box_plot_points: usize) -> Vec<Data> {
 // be colored, it must be compared to the previous candle to know if it is green
 // or red. Currently this results in a boxplot of size n-1 from a Data input of
 // n size, where the first data point is discarded.
-fn boxplot_from_data(data: Vec<Data>) -> egui::plot::BoxPlot {
+fn boxplot_from_data(data: Vec<Data>, show_candlesticks: bool) -> Option<egui::plot::BoxPlot> {
     use egui::plot::{BoxElem, BoxPlot, BoxSpread};
-
+    if !show_candlesticks {
+        return None;
+    }
     let first_box: BoxElem = BoxElem::new(
         0.0_f64,
         BoxSpread {
@@ -307,10 +316,12 @@ fn boxplot_from_data(data: Vec<Data>) -> egui::plot::BoxPlot {
         .collect();
 
     box_elems.insert(0, first_box);
-    BoxPlot::new(box_elems)
+
+    Some(BoxPlot::new(box_elems))
 }
 
-//
+// A typical price (tp) line.
+// This line should closely track the candlesticks in the candlestick boxplot.
 fn tp_line(tp_vec: &[f64], show_tp_line: &bool) -> Option<egui::plot::Line> {
     use egui::plot::{Line, PlotPoints};
     match show_tp_line {
@@ -321,6 +332,8 @@ fn tp_line(tp_vec: &[f64], show_tp_line: &bool) -> Option<egui::plot::Line> {
     }
 }
 
+// Make simple moving average (sma) line values from typical price (tp), if the
+// checkbox associated with that sma line is ticked.
 fn sma_line(
     tp_vec: &[f64],
     moving_average_size: usize,
@@ -340,9 +353,12 @@ fn sma_line(
     }
 }
 
+// A multiplot for the box plot candlestick chart and associated indicators.
+// This takes a Vec of Options so the values for the lines and boxplots are not
+// calculated unless the associated checkbox is ticked.
 fn draw_multiplot(
     ui: &mut egui::Ui,
-    boxplot: egui::plot::BoxPlot,
+    boxplots: Vec<Option<egui::plot::BoxPlot>>,
     simple_lines: Vec<Option<egui::plot::Line>>,
 ) -> egui::Response {
     use egui::plot::Plot;
@@ -350,7 +366,9 @@ fn draw_multiplot(
         .view_aspect(2.0)
         .data_aspect(0.1)
         .show(ui, |plot_ui| {
-            plot_ui.box_plot(boxplot);
+            for boxplot in boxplots.into_iter().flatten() {
+                plot_ui.box_plot(boxplot);
+            }
             for line in simple_lines.into_iter().flatten() {
                 plot_ui.line(line);
             }
