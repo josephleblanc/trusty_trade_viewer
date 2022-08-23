@@ -1989,7 +1989,7 @@ dependencies = [
 [[package]]
 name = "trusty_trade"
 version = "0.1.0"
-source = "git+https://github.com/josephleblanc/trusty_trade.git#1d8455e3891c46319abc56cabb9f06cac0ee52ee"
+source = "git+https://github.com/josephleblanc/trusty_trade.git#9149dfb3582797a8eab76f738ca7a2e903ef64bd"
 dependencies = [
  "chrono",
  "csv",

@@ -238,8 +238,10 @@ impl eframe::App for TemplateApp {
             ];
             let box_plots: Vec<Option<egui::plot::BoxPlot>> =
                 vec![boxplot_from_data(data, *show_candlesticks)];
+            let polygons: Vec<Option<egui::plot::Polygon>> =
+                vec![bb_line(&tp_vec, *show_bollinger)];
 
-            draw_multiplot(ui, box_plots, simple_lines);
+            draw_multiplot(ui, box_plots, simple_lines, polygons);
             ui.end_row();
             ui.label(format!("size of dataset used: {}", box_plot_points));
             egui::warn_if_debug_build(ui);
@@ -353,6 +355,26 @@ fn sma_line(
     }
 }
 
+fn bb_line(tp_vec: &[f64], show_bollinger: bool) -> Option<egui::plot::Polygon> {
+    use egui::plot::{PlotPoints, Polygon};
+    use trusty_trade::bollingerbands::semi_rolling_bb;
+    if show_bollinger {
+        let bb_vec = semi_rolling_bb(tp_vec);
+
+        let (upper_vec, lower_vec): (Vec<[f64; 2]>, Vec<[f64; 2]>) = bb_vec
+            .iter()
+            .enumerate()
+            .filter(|(_, opt)| opt.is_some())
+            .map(|(x, opt)| ([x as f64, opt.unwrap()[0]], [x as f64, opt.unwrap()[0]]))
+            .unzip();
+        let bb_iter = upper_vec.into_iter().chain(lower_vec.into_iter());
+        let plot_points = PlotPoints::from_iter(bb_iter);
+        Some(Polygon::new(plot_points))
+    } else {
+        None
+    }
+}
+
 // A multiplot for the box plot candlestick chart and associated indicators.
 // This takes a Vec of Options so the values for the lines and boxplots are not
 // calculated unless the associated checkbox is ticked.
@@ -360,6 +382,7 @@ fn draw_multiplot(
     ui: &mut egui::Ui,
     boxplots: Vec<Option<egui::plot::BoxPlot>>,
     simple_lines: Vec<Option<egui::plot::Line>>,
+    polygons: Vec<Option<egui::plot::Polygon>>,
 ) -> egui::Response {
     use egui::plot::Plot;
     Plot::new("box_plot")
@@ -371,6 +394,9 @@ fn draw_multiplot(
             }
             for line in simple_lines.into_iter().flatten() {
                 plot_ui.line(line);
+            }
+            for polygon in polygons.into_iter().flatten() {
+                plot_ui.polygon(polygon)
             }
         })
         .response
